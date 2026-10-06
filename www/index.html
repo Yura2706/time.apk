@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Время">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1a14">
+<title>Учёт времени</title>
+<script src="xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f3f5f2;--card:#fff;--ink:#16211b;--mute:#6b7a70;--line:#dfe5e0;--go:#1f7a4d;--go2:#2fa36a;--acc:#e0a526;--stop:#c23b2e;
+  --ai:#6366f1;--ai2:#4f46e5;--ai-glow:rgba(99,102,241,0.22);
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1511;--card:#18211c;--ink:#e7efe9;--mute:#8c9b92;--line:#27332b;--go:#3fb57a;--go2:#34a36b;--stop:#e5675a;
+    --ai:#818cf8;--ai2:#6366f1;--ai-glow:rgba(129,140,248,0.25)
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1511;--card:#18211c;--ink:#e7efe9;--mute:#8c9b92;--line:#27332b;--go:#3fb57a;--go2:#34a36b;--stop:#e5675a;
+  --ai:#818cf8;--ai2:#6366f1;--ai-glow:rgba(129,140,248,0.25)
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(120% 60% at 50% 0%,color-mix(in srgb,var(--go) 14%,var(--bg)),var(--bg) 70%) fixed;
+  color:var(--ink);font-family:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;overscroll-behavior:none;user-select:none;-webkit-user-select:none
+}
+#app{height:100%;display:flex;flex-direction:column;max-width:560px;margin:0 auto;position:relative;overflow:hidden}
+header{padding:14px 20px 4px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center}
+header h1::before{content:"⏱";display:inline-grid;place-items:center;width:30px;height:30px;margin-right:9px;border-radius:9px;background:var(--go);font-size:16px;color:#fff}
+#sync{font-size:12px;color:var(--mute);background:var(--card);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.screen{flex:1;overflow-y:auto;padding:12px 20px}
+.screen[hidden]{display:none}
+
+/* Timer screen */
+#t-screen{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;text-align:center}
+#clock{font-size:clamp(48px,16vw,74px);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:2px}
+#since{color:var(--mute);font-size:13px;min-height:1.3em}
+.ringwrap{position:relative;width:min(72vw,275px);aspect-ratio:1;margin-top:6px;display:grid;place-items:center}
+.ringwrap svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
+.trk{fill:none;stroke:var(--line);stroke-width:9}
+.arc{fill:none;stroke-width:9;stroke-dasharray:0 100;transition:stroke-dasharray .5s ease,stroke-dashoffset .5s ease}
+.shine{fill:none;stroke:#fff;stroke-width:9;stroke-opacity:.55;stroke-dasharray:3 97;stroke-linecap:round;opacity:0}
+#spin{transform-origin:100px 100px}
+.running #spin{animation:spin 2.4s linear infinite}
+.running .shine{opacity:1}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sw{fill:none;stroke:var(--ink);stroke-opacity:.35;stroke-width:2;stroke-dasharray:0 100;stroke-linecap:round}
+#toggle{
+  position:relative;z-index:2;width:60%;aspect-ratio:1;border-radius:50%;border:0;
+  background:linear-gradient(160deg,var(--go2),var(--go));color:#fff;font:inherit;font-size:25px;font-weight:800;
+  box-shadow:0 10px 30px color-mix(in srgb,var(--go) 40%,transparent),0 0 0 10px color-mix(in srgb,var(--go) 14%,transparent);
+  transition:transform .12s,background .2s,box-shadow .2s;cursor:pointer
+}
+#toggle:active{transform:scale(.95)}
+#toggle.run{
+  background:linear-gradient(160deg,color-mix(in srgb,var(--stop) 85%,#fff),var(--stop));
+  box-shadow:0 10px 30px color-mix(in srgb,var(--stop) 40%,transparent),0 0 0 10px color-mix(in srgb,var(--stop) 14%,transparent)
+}
+.running #toggle{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+.running #toggle:active{animation:none;transform:scale(.95)}
+@media (prefers-reduced-motion:reduce){.running #spin,.running #toggle{animation:none}}
+
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute);margin-top:2px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.start{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px 8px 5px 12px}
+#st{font:inherit;font-size:17px;font-weight:700;color:var(--ink);border:0;background:transparent;padding:4px 4px}
+#clr{border:0;background:none;color:var(--mute);font-size:18px;padding:3px 6px;cursor:pointer}
+#today{width:100%;max-width:320px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:10px}
+#today b{color:var(--ink)}
+#bar{height:7px;border-radius:99px;background:var(--line);margin-top:7px;overflow:hidden}
+#bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--go2),var(--acc));transition:width .4s}
+#bl{font-size:11px;margin-top:5px}
+
+/* Minimalist AI Quick Link on Timer */
+.ai-quick-link{
+  border:0;background:none;color:var(--ai);font:inherit;font-size:12px;font-weight:700;
+  cursor:pointer;padding:4px 10px;border-radius:8px;display:inline-flex;align-items:center;gap:4px;
+  transition:background .15s;margin-top:2px
+}
+.ai-quick-link:hover{background:color-mix(in srgb,var(--ai) 12%,transparent)}
+
+/* History Screen */
+.wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line)}
+thead th{background:color-mix(in srgb,var(--go) 9%,var(--card));color:var(--mute);font-weight:600;font-size:12px;position:sticky;top:0}
+tbody tr:nth-child(even){background:color-mix(in srgb,var(--ink) 3%,transparent)}
+tr:last-child td{border-bottom:0}
+td.du{font-weight:800}
+td:nth-child(7){color:var(--acc)}td:nth-child(8){color:var(--stop)}
+tfoot td{font-weight:800;background:color-mix(in srgb,var(--go) 12%,var(--card));border-top:2px solid var(--go);border-bottom:0;position:sticky;bottom:0}
+.del{border:0;background:none;color:var(--mute);font-size:20px;padding:0 4px;cursor:pointer}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;color:var(--mute);margin-bottom:12px;font-size:14px}
+.empty{padding:40px 10px;text-align:center;color:var(--mute)}
+
+/* Table Import / Export actions */
+.hist-actions{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.hist-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hist-act-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:12px 14px;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--ink);font:inherit;font-weight:700;font-size:14px;
+  cursor:pointer;transition:transform .1s,background .15s,box-shadow .15s;
+  box-shadow:0 2px 8px rgba(0,0,0,.04)
+}
+.hist-act-btn:active{transform:scale(.97)}
+.hist-act-btn.primary{
+  background:var(--go);color:#fff;border-color:var(--go);
+  box-shadow:0 4px 14px color-mix(in srgb,var(--go) 30%,transparent)
+}
+.hist-ai-btn{
+  width:100%;margin-top:4px;padding:12px;border:1px solid color-mix(in srgb,var(--ai) 35%,var(--line));
+  border-radius:14px;background:color-mix(in srgb,var(--ai) 10%,var(--card));color:var(--ai);
+  font:inherit;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px
+}
+.hist-clear-btn{border:0;background:none;color:var(--mute);text-decoration:underline;font:inherit;font-size:14px;margin:6px auto 10px;display:block;cursor:pointer}
+
+.export-opt-btn{
+  display:flex;align-items:center;gap:12px;padding:12px 14px;
+  background:var(--bg);border:1px solid var(--line);border-radius:14px;
+  font:inherit;cursor:pointer;transition:background .15s,border-color .15s;width:100%
+}
+.export-opt-btn:active{background:color-mix(in srgb,var(--go) 10%,var(--bg))}
+
+/* Manual Screen */
+.form{display:grid;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.form label{display:grid;gap:5px;color:var(--mute);font-size:13px;font-weight:600}
+.form input{font:inherit;font-size:17px;font-weight:700;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%;min-width:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#pv{background:color-mix(in srgb,var(--go) 10%,var(--card));border-radius:12px;padding:12px;font-size:14px;color:var(--mute);min-height:60px}
+#pv b{color:var(--ink);font-size:19px}
+#add{border:0;border-radius:14px;padding:15px;background:var(--go);color:#fff;font:inherit;font-weight:700;font-size:16px;cursor:pointer}
+#add:disabled{opacity:.4}
+
+/* Collapsible NLP accordion on Manual Screen */
+.ai-nlp-details{
+  background:color-mix(in srgb,var(--ai) 6%,var(--card));
+  border:1px solid color-mix(in srgb,var(--ai) 25%,var(--line));
+  border-radius:14px;padding:10px 14px;margin-bottom:12px;font-size:13px
+}
+.ai-nlp-details summary{font-weight:700;color:var(--ai);cursor:pointer;outline:none;user-select:none}
+.ai-nlp-details[open] summary{margin-bottom:10px}
+.ai-nlp-row{display:flex;gap:8px;margin-top:6px}
+.ai-nlp-row input{
+  flex:1;font:inherit;font-size:14px;font-weight:600;color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0
+}
+.ai-nlp-row button{
+  border:0;background:var(--ai);color:#fff;border-radius:10px;padding:8px 12px;
+  font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap
+}
+.ai-nlp-hint{font-size:11px;color:var(--mute);margin-top:5px}
+
+/* ==================== COLLAPSIBLE AI BOTTOM SHEET ==================== */
+.ai-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);
+  z-index:90;opacity:0;pointer-events:none;transition:opacity .25s ease
+}
+.ai-overlay.open{opacity:1;pointer-events:auto}
+
+.ai-sheet{
+  position:fixed;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;
+  height:76vh;max-height:600px;background:var(--card);
+  border:1px solid var(--line);border-bottom:0;
+  border-radius:24px 24px 0 0;
+  box-shadow:0 -10px 40px rgba(0,0,0,.26);
+  z-index:95;display:flex;flex-direction:column;
+  transform:translateY(100%);
+  transition:transform .3s cubic-bezier(0.16,1,0.3,1);
+  padding:0 14px 10px;
+}
+.ai-sheet.open{transform:translateY(0)}
+
+.ai-sheet-handle-wrap{
+  padding:10px 0 6px;display:flex;justify-content:center;cursor:grab;touch-action:none
+}
+.ai-sheet-handle{width:40px;height:4px;border-radius:99px;background:var(--mute);opacity:.35}
+
+.ai-sheet-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:2px 2px 10px;border-bottom:1px solid var(--line);gap:8px
+}
+.ai-sheet-title-row{display:flex;align-items:center;gap:8px}
+.ai-sheet-title{font-size:16px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+.ai-status-badge{
+  display:inline-flex;align-items:center;gap:5px;background:var(--bg);
+  border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--mute)
+}
+.ai-status-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--go2)}
+.ai-status-badge.online .dot{background:var(--ai);box-shadow:0 0 6px var(--ai)}
+.ai-sheet-actions{display:flex;align-items:center;gap:6px}
+.ai-cfg-btn{
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  border-radius:10px;padding:6px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center
+}
+.ai-collapse-btn{
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  border-radius:10px;padding:6px 12px;font:inherit;font-size:12px;font-weight:700;
+  cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:background .15s
+}
+.ai-collapse-btn:active{background:color-mix(in srgb,var(--line) 40%,var(--bg))}
+
+.ai-chips-wrap{
+  display:flex;gap:7px;overflow-x:auto;padding:8px 0 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch
+}
+.ai-chips-wrap::-webkit-scrollbar{display:none}
+.ai-chip{
+  flex-shrink:0;border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  border-radius:99px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;
+  transition:transform .1s,background .15s;display:inline-flex;align-items:center;gap:4px
+}
+.ai-chip:active{transform:scale(.95)}
+
+.ai-chat-box{
+  flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:6px 0 10px;user-select:text;-webkit-user-select:text
+}
+.ai-msg{display:flex;flex-direction:column;max-width:92%;animation:fadeIn .2s ease-out}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.ai-msg.user{
+  align-self:flex-end;background:var(--go);color:#fff;
+  border-radius:16px 16px 4px 16px;padding:9px 13px;font-size:13.5px;
+  box-shadow:0 2px 8px color-mix(in srgb,var(--go) 25%,transparent)
+}
+.ai-msg.bot{
+  align-self:flex-start;background:var(--bg);border:1px solid var(--line);color:var(--ink);
+  border-radius:16px 16px 16px 4px;padding:11px 13px;font-size:13.5px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.03)
+}
+.ai-msg.bot .ai-author{
+  display:flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--ai);
+  text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px
+}
+.ai-msg.bot .ai-body{word-break:break-word}
+.ai-msg.bot .ai-body b{color:var(--ink)}
+.ai-copy-btn{
+  margin-top:7px;align-self:flex-start;border:1px solid var(--line);background:var(--card);
+  color:var(--mute);border-radius:8px;padding:3px 8px;font:inherit;font-size:11px;font-weight:600;cursor:pointer
+}
+
+.ai-typing{
+  align-self:flex-start;display:flex;align-items:center;gap:5px;
+  background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:9px 13px
+}
+.ai-typing span{
+  width:6px;height:6px;background:var(--mute);border-radius:50%;
+  animation:bounce 1.4s infinite ease-in-out both
+}
+.ai-typing span:nth-child(1){animation-delay:-0.32s}
+.ai-typing span:nth-child(2){animation-delay:-0.16s}
+@keyframes bounce{0%,80%,100%{transform:scale(0);opacity:.4}40%{transform:scale(1);opacity:1}}
+
+.ai-input-wrap{
+  display:flex;gap:8px;background:var(--bg);border:1px solid var(--line);
+  border-radius:16px;padding:5px 6px 5px 12px;margin-top:4px
+}
+.ai-input-wrap input{flex:1;border:0;background:transparent;color:var(--ink);font:inherit;font-size:14px;outline:none;min-width:0}
+.ai-input-wrap button{
+  border:0;background:var(--ai);color:#fff;border-radius:12px;padding:8px 14px;
+  font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:transform .1s
+}
+.ai-input-wrap button:active{transform:scale(.95)}
+
+/* Modal settings & dialogs */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+  z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s ease-out
+}
+.modal-overlay[hidden]{display:none}
+.modal-card{
+  background:var(--card);border:1px solid var(--line);border-radius:20px;
+  max-width:440px;width:100%;padding:20px;display:flex;flex-direction:column;gap:14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between}
+.modal-head h3{margin:0;font-size:18px;font-weight:800}
+.modal-close{border:0;background:none;font-size:22px;color:var(--mute);cursor:pointer;padding:4px}
+.modal-field{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
+.modal-field select,.modal-field input{
+  font:inherit;font-size:14px;font-weight:600;color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:10px;padding:10px;width:100%
+}
+.modal-btns{display:flex;gap:10px;margin-top:6px}
+.modal-btn-save{flex:1;border:0;background:var(--go);color:#fff;border-radius:12px;padding:12px;font:inherit;font-weight:700;cursor:pointer}
+.modal-btn-cancel{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:12px 16px;font:inherit;font-weight:600;cursor:pointer}
+
+/* Navigation */
+nav{margin:0 12px 8px;border:1px solid var(--line);border-radius:20px;overflow:hidden;display:flex;background:var(--card);z-index:10}
+nav button{
+  flex:1;border:0;background:none;color:var(--mute);font:inherit;font-weight:700;
+  padding:9px 0 7px;margin:5px;border-radius:15px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer
+}
+nav button .i{font-size:19px;line-height:1}
+nav button.on{color:var(--go);background:color-mix(in srgb,var(--go) 14%,transparent)}
+nav button#n-ai.on{color:var(--ai);background:color-mix(in srgb,var(--ai) 14%,transparent)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="app">
+<header><h1>Учёт времени</h1><span id="sync"></span></header>
+
+<!-- Timer Screen -->
+<section class="screen" id="t-screen">
+  <div id="clock">00:00:00</div>
+  <div id="since"></div>
+  <div class="ringwrap">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <circle class="trk" cx="100" cy="100" r="90" pathLength="100"/>
+      <circle class="trk" cx="100" cy="100" r="77" pathLength="100"/>
+      <circle id="rg" class="arc" cx="100" cy="100" r="90" pathLength="100" stroke="var(--go2)"/>
+      <circle id="ry" class="arc" cx="100" cy="100" r="90" pathLength="100" stroke="var(--acc)"/>
+      <circle id="rr" class="arc" cx="100" cy="100" r="77" pathLength="100" stroke="var(--stop)"/>
+      <g id="spin"><circle class="shine" cx="100" cy="100" r="90" pathLength="100"/></g>
+      <circle id="sw" class="sw" cx="100" cy="100" r="98" pathLength="100"/>
+      <circle id="dot" cx="198" cy="100" r="3.6" fill="var(--ink)" opacity="0"/>
+    </svg>
+    <button id="toggle">Старт</button>
+  </div>
+  <div class="legend"><span><i style="background:var(--go2)"></i>100%</span><span><i style="background:var(--acc)"></i>125%</span><span><i style="background:var(--stop)"></i>150%</span></div>
+  <div class="start"><label for="st" id="stl">Начать с</label><input type="time" id="st"><button id="clr" aria-label="Сбросить время" hidden>×</button></div>
+  <div id="today"></div>
+  <button id="ai-quick-link" class="ai-quick-link" type="button">✨ Спросить ИИ-помощника ▲</button>
+</section>
+
+<!-- History Screen -->
+<section class="screen" id="h-screen" hidden>
+  <div class="sum"><span id="cnt"></span><span id="total"></span></div>
+  <div class="wrap"><table id="tbl"><thead><tr><th>№</th><th>Число</th><th>Начало</th><th>Конец</th><th>Длительность</th><th>100%</th><th>125%</th><th>150%</th><th></th></tr></thead><tbody id="rows"></tbody><tfoot id="foot"></tfoot></table></div>
+  <div id="empty" class="empty"></div>
+  <div class="hist-actions">
+    <div class="hist-grid">
+      <button id="btn-export" class="hist-act-btn primary">📤 Экспорт</button>
+      <button id="btn-import" class="hist-act-btn">📥 Импорт</button>
+    </div>
+    <button id="ai-hist-btn" class="hist-ai-btn" hidden>✨ Анализ смен от ИИ</button>
+    <button id="clear" class="hist-clear-btn" hidden>Очистить всё</button>
+    <input type="file" id="file-import" accept=".xlsx,.xls,.json" style="display:none">
+  </div>
+</section>
+
+<!-- Manual Screen -->
+<section class="screen" id="m-screen" hidden>
+  <details class="ai-nlp-details">
+    <summary>✨ Быстрый ввод текстом через ИИ</summary>
+    <div class="ai-nlp-row">
+      <input type="text" id="nlp-text" placeholder="Напр: вчера с 10:00 до 19:30">
+      <button type="button" id="nlp-btn">Распознать</button>
+    </div>
+    <div id="nlp-hint" class="ai-nlp-hint">«сегодня 9-18», «вчера с 10 до 19:30», «8 часов с 9:00»</div>
+  </details>
+  <div class="form">
+    <label>Число<input type="date" id="md"></label>
+    <div class="row2"><label>Начало<input type="time" id="ms"></label><label>Конец<input type="time" id="me"></label></div>
+    <div id="pv">Введите начало и конец</div>
+    <button id="add" disabled>Добавить запись</button>
+  </div>
+</section>
+
+<!-- Bottom Nav -->
+<nav>
+  <button id="n-t" class="on"><span class="i">⏱</span>Таймер</button>
+  <button id="n-h"><span class="i">☰</span>История</button>
+  <button id="n-m"><span class="i">✎</span>Вручную</button>
+  <button id="n-ai"><span class="i">🤖</span>ИИ</button>
+</nav>
+
+<!-- Collapsible AI Bottom Sheet & Overlay -->
+<div class="ai-overlay" id="ai-overlay"></div>
+<div class="ai-sheet" id="ai-sheet">
+  <div class="ai-sheet-handle-wrap" id="ai-sheet-handle">
+    <div class="ai-sheet-handle"></div>
+  </div>
+  <div class="ai-sheet-header">
+    <div class="ai-sheet-title-row">
+      <div class="ai-sheet-title">🤖 ИИ Помощник</div>
+      <div class="ai-status-badge" id="ai-status-badge">
+        <span class="dot"></span>
+        <span id="ai-status-text">Офлайн</span>
+      </div>
+    </div>
+    <div class="ai-sheet-actions">
+      <button class="ai-cfg-btn" id="ai-cfg-open" title="Настройки API">⚙️</button>
+      <button class="ai-collapse-btn" id="ai-collapse-btn">▼ Свернуть</button>
+    </div>
+  </div>
+  <div class="ai-chips-wrap">
+    <button class="ai-chip" data-q="📊 Аналитика часов">📊 Аналитика</button>
+    <button class="ai-chip" data-q="⚠️ Проверка риска выгорания">⚠️ Выгорание</button>
+    <button class="ai-chip" data-q="🔮 Прогноз на сегодня">🔮 Прогноз</button>
+    <button class="ai-chip" data-q="📝 Составить отчет для шефа">📝 Отчет</button>
+    <button class="ai-chip" data-q="💰 Расчет заработка по ставке">💰 Ставка</button>
+    <button class="ai-chip" data-q="💡 Совет по продуктивности">💡 Совет</button>
+  </div>
+  <div class="ai-chat-box" id="ai-chat">
+    <div class="ai-msg bot">
+      <div class="ai-author">🤖 ИИ Ассистент</div>
+      <div class="ai-body">
+        Привет! Я помогу проанализировать переработки (100%, 125%, 150%), оценить риск выгорания или составить отчет.<br><br>
+        Выберите вопрос сверху или напишите свой. В любой момент вы можете нажать <b>«▼ Свернуть»</b>, чтобы скрыть эту панель.
+      </div>
+    </div>
+  </div>
+  <div class="ai-input-wrap">
+    <input type="text" id="ai-input" placeholder="Вопрос о часах, нормах, ставке...">
+    <button type="button" id="ai-send">Отправить</button>
+  </div>
+</div>
+
+</div>
+
+<!-- Modal AI Settings -->
+<div class="modal-overlay" id="ai-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Настройки ИИ</h3>
+      <button class="modal-close" id="ai-cfg-close">×</button>
+    </div>
+    <label class="modal-field">
+      Провайдер ИИ
+      <select id="cfg-provider">
+        <option value="local">Встроенный ИИ (Офлайн, без ключа)</option>
+        <option value="gemini">Google Gemini (Бесплатный API ключ)</option>
+        <option value="openai">OpenAI (ChatGPT)</option>
+        <option value="deepseek">DeepSeek API</option>
+        <option value="custom">Пользовательский (OpenAI-compatible)</option>
+      </select>
+    </label>
+    <label class="modal-field" id="cfg-key-wrap">
+      API Ключ
+      <input type="password" id="cfg-key" placeholder="AIzaSy... или sk-...">
+    </label>
+    <label class="modal-field" id="cfg-model-wrap">
+      Модель
+      <input type="text" id="cfg-model" placeholder="gemini-1.5-flash / gpt-4o-mini">
+    </label>
+    <label class="modal-field" id="cfg-url-wrap" style="display:none">
+      Базовый URL
+      <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1">
+    </label>
+    <div style="font-size:12px;color:var(--mute);line-height:1.4">
+      • <b>Встроенный ИИ</b> работает прямо на устройстве без интернета и ключей.<br>
+      • <b>Gemini / OpenAI</b> позволяют вести живой развернутый диалог.
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn-cancel" id="ai-cfg-cancel">Отмена</button>
+      <button class="modal-btn-save" id="ai-cfg-save">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Export Table -->
+<div class="modal-overlay" id="export-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Экспорт таблицы</h3>
+      <button class="modal-close" id="export-close">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--mute);line-height:1.4">Выберите формат для сохранения данных:</div>
+    <div style="display:grid;gap:10px">
+      <button id="export-xlsx-btn" class="export-opt-btn" type="button">
+        <span style="font-size:24px">📊</span>
+        <div style="text-align:left">
+          <div style="font-weight:700;color:var(--ink);font-size:14px">Таблица Excel (.xlsx)</div>
+          <div style="font-size:12px;color:var(--mute)">С расчетом ставок 100%, 125%, 150%, длительностью и итогом</div>
+        </div>
+      </button>
+      <button id="export-json-btn" class="export-opt-btn" type="button">
+        <span style="font-size:24px">💾</span>
+        <div style="text-align:left">
+          <div style="font-weight:700;color:var(--ink);font-size:14px">Резервная копия (.json)</div>
+          <div style="font-size:12px;color:var(--mute)">Точная копия базы для переноса и полного восстановления</div>
+        </div>
+      </button>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn-cancel" id="export-cancel" style="width:100%">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Import Table -->
+<div class="modal-overlay" id="import-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Импорт таблицы</h3>
+      <button class="modal-close" id="import-close">×</button>
+    </div>
+    <div id="import-summary" style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.6">
+    </div>
+    <div style="font-size:13px;font-weight:700;color:var(--ink);margin-top:2px">Режим импорта:</div>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;cursor:pointer;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+      <input type="radio" name="import-mode" value="merge" checked style="accent-color:var(--go);width:18px;height:18px">
+      <div>
+        <div style="color:var(--ink)">Объединить с текущими</div>
+        <div style="font-size:11px;color:var(--mute);font-weight:400">Добавит новые записи, дубликаты будут пропущены</div>
+      </div>
+    </label>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;cursor:pointer;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+      <input type="radio" name="import-mode" value="replace" style="accent-color:var(--stop);width:18px;height:18px">
+      <div>
+        <div style="color:var(--ink)">Заменить всю историю</div>
+        <div style="font-size:11px;color:var(--mute);font-weight:400">Старые записи удалятся, запишутся новые из файла</div>
+      </div>
+    </label>
+    <div class="modal-btns">
+      <button class="modal-btn-cancel" id="import-cancel">Отмена</button>
+      <button class="modal-btn-save" id="import-apply">Загрузить в таблицу</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY="timeTracker.v1";
+const AI_CFG_KEY="timeTracker.aiCfg.v1";
+let log=[],startTs=null,tick=null,ref=null,lastJson="";
+let pendingImport=[];
+
+const $=id=>document.getElementById(id);
+const p2=n=>String(n).padStart(2,"0");
+const dur=ms=>{const s=Math.floor(ms/1000);return p2(Math.floor(s/3600))+":"+p2(Math.floor(s%3600/60))+":"+p2(s%60)};
+const durHours=ms=>(ms/3600000).toFixed(2)+" ч";
+const dt=ts=>{const d=new Date(ts);return p2(d.getDate())+"."+p2(d.getMonth()+1)+"."+d.getFullYear()};
+const tm=ts=>{const d=new Date(ts);return p2(d.getHours())+":"+p2(d.getMinutes())+":"+p2(d.getSeconds())};
+const buzz=()=>{try{navigator.vibrate&&navigator.vibrate(30)}catch(e){}};
+
+const H=3600000,T1=8.5*H,T2=10.5*H;
+function calc(){
+  const out={},acc={};
+  log.slice().sort((a,b)=>a.start-b.start).forEach(r=>{
+    const k=dt(r.start),d=r.end-r.start,before=acc[k]||0,after=before+d;
+    const a=Math.max(0,Math.min(after,T1)-Math.min(before,T1));
+    const b=Math.max(0,Math.min(after,T2)-Math.max(before,T1));
+    const c=d-a-b;
+    out[r.id]={d,a,b,c,w:a+1.25*b+1.5*c};acc[k]=after;
+  });
+  return out;
+}
+const z=v=>v>0?dur(v):"–";
+
+function ring(cur){
+  const g=Math.min(cur,T1)/T2*100,y=Math.max(0,Math.min(cur,T2)-T1)/T2*100,r=Math.min(1,Math.max(0,cur-T2)/(3*H))*100;
+  $("rg").style.strokeDasharray=g+" "+(100-g);
+  $("ry").style.strokeDasharray=y+" "+(100-y);$("ry").style.strokeDashoffset=-(T1/T2*100);
+  $("rr").style.strokeDasharray=r+" "+(100-r);
+}
+
+let tsumLog=0;
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY)||"{}");log=d.log||[];startTs=d.startTs||null}catch(e){log=[];startTs=null}}
+function local(){try{localStorage.setItem(KEY,JSON.stringify({log,startTs}))}catch(e){}}
+function save(){
+  local();
+  if(ref){lastJson=JSON.stringify({log,startTs});ref.set({log,startTs}).catch(()=>setSync("Ошибка синхронизации"))}
+}
+function setSync(t){$("sync").textContent=t}
+async function initSync(){
+  try{
+    const db=await claude.use("db"),user=await claude.use("user");
+    if(!db||!user){setSync("Только это устройство");return}
+    const id=await user.id();
+    if(!id){setSync("Только это устройство");return}
+    ref=db.doc("data/users/"+id+"/tracker");
+    let first=true;
+    ref.onSnapshot(snap=>{
+      const r=snap.exists?snap.data():null;
+      if(first){
+        first=false;
+        if(r){
+          const m=new Map();
+          (r.log||[]).concat(log).forEach(x=>m.set(x.id,x));
+          log=[...m.values()].sort((a,b)=>a.start-b.start);
+          startTs=r.startTs!==undefined&&r.startTs!==null?r.startTs:startTs;
+        }
+        save();render();loop();
+      }else if(r&&JSON.stringify({log:r.log||[],startTs:r.startTs??null})!==lastJson){
+        log=r.log||[];startTs=r.startTs??null;
+        lastJson=JSON.stringify({log,startTs});local();render();loop();
+      }
+      setSync("Синхронизировано");
+    },()=>setSync("Только это устройство"));
+  }catch(e){setSync("Только это устройство")}
+}
+
+function updateAiHint(cur, run){
+  const btn=$("ai-quick-link");
+  if(!btn)return;
+  if(run){
+    if(cur<T1){
+      const left=T1-cur;
+      btn.innerHTML="✨ ИИ: до нормы осталось <b>"+dur(left)+"</b> ▲";
+    }else if(cur<T2){
+      btn.innerHTML="⚡ ИИ: норма закрыта! Переработка 125% ▲";
+    }else{
+      btn.innerHTML="🛑 ИИ: лимит 10:30 превышен (150%) ▲";
+    }
+  }else{
+    if(cur>=T1){
+      btn.innerHTML="🎉 ИИ: норма 8:30 за сегодня выполнена ▲";
+    }else if(cur>0){
+      btn.innerHTML="✨ ИИ: сегодня отработано "+dur(cur)+" ▲";
+    }else{
+      btn.innerHTML="✨ Спросить ИИ-помощника ▲";
+    }
+  }
+}
+
+function render(){
+  const run=startTs!==null;
+  $("toggle").textContent=run?"Стоп":"Старт";
+  $("toggle").classList.toggle("run",run);
+  $("since").textContent=run?"Начато в "+tm(startTs):"Нажмите, чтобы начать";
+  $("clock").textContent=dur(run?Date.now()-startTs:0);
+  $("stl").textContent=run?"Начало":"Начать с";
+  if(document.activeElement!==$("st"))$("st").value=run?p2(new Date(startTs).getHours())+":"+p2(new Date(startTs).getMinutes()):($("st").value||"");
+  $("clr").hidden=run||!$("st").value;
+  const today=dt(Date.now());
+  const tsum=log.filter(r=>dt(r.start)===today).reduce((a,r)=>a+r.end-r.start,0);
+  const cur=tsum+(run?Date.now()-startTs:0);
+  tsumLog=tsum;ring(cur);
+  $("today").innerHTML="Сегодня: <b>"+dur(cur)+"</b><div id=\"bl\">"+(cur<T1?"До 8:30 осталось "+dur(T1-cur):"Норма 8:30 выполнена")+"</div>";
+  updateAiHint(cur,run);
+
+  const sum=log.reduce((a,r)=>a+r.end-r.start,0);
+  $("cnt").textContent=log.length?"Записей: "+log.length:"";
+  $("total").textContent=log.length?"Всего: "+dur(sum):"";
+  $("clear").hidden=!log.length;
+  $("tbl").parentElement.hidden=!log.length;
+  $("ai-hist-btn").hidden=!log.length;
+
+  const expBtn=$("btn-export");
+  if(expBtn){
+    expBtn.disabled=!log.length;
+    expBtn.style.opacity=log.length?"1":"0.55";
+  }
+
+  $("empty").textContent=log.length?"":"Записей пока нет. Запустите таймер или нажмите «Импорт таблицы».";
+  const rows=$("rows");rows.innerHTML="";
+  const cc=calc();let W=0;const T={d:0,a:0,b:0,c:0,w:0};
+  log.forEach((r,i)=>{
+    const c=cc[r.id];W+=c.w;for(const k in T)T[k]+=c[k];
+    const tr=document.createElement("tr");
+    [i+1,dt(r.start),tm(r.start),tm(r.end),dur(c.d),z(c.a),z(c.b),z(c.c)].forEach((v,k)=>{
+      const td=document.createElement("td");td.textContent=v;if(k===4)td.className="du";tr.appendChild(td)});
+    const td=document.createElement("td"),b=document.createElement("button");
+    b.className="del";b.textContent="×";b.setAttribute("aria-label","Удалить запись");
+    b.onclick=()=>{log=log.filter(x=>x.id!==r.id);save();render()};
+    td.appendChild(b);tr.appendChild(td);rows.appendChild(tr);
+  });
+  const ft=$("foot");ft.innerHTML="";
+  if(log.length){
+    const tr=document.createElement("tr");
+    ["","Итого","","",dur(T.d),z(T.a),z(T.b),z(T.c),""].forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.appendChild(td)});
+    ft.appendChild(tr);
+  }
+}
+
+let raf=null;
+function frame(){
+  if(startTs===null){raf=null;return}
+  const f=((Date.now()-startTs)%60000)/60000,a=f*2*Math.PI;
+  $("sw").style.strokeDasharray=(f*100)+" "+(100-f*100);
+  const d=$("dot");d.setAttribute("cx",(100+98*Math.cos(a)).toFixed(2));d.setAttribute("cy",(100+98*Math.sin(a)).toFixed(2));d.setAttribute("opacity","1");
+  raf=requestAnimationFrame(frame);
+}
+function loop(){
+  document.body.classList.toggle("running",startTs!==null);
+  if(startTs===null){$("sw").style.strokeDasharray="0 100";$("dot").setAttribute("opacity","0")}
+  else if(!raf)raf=requestAnimationFrame(frame);
+  clearInterval(tick);
+  if(startTs!==null)tick=setInterval(()=>{
+    $("clock").textContent=dur(Date.now()-startTs);
+    ring(tsumLog+Date.now()-startTs);
+    if(Date.now()%5000<260)render();
+  },250);
+}
+
+function tab(n){
+  ["t","h","m"].forEach(k=>{
+    const el=$(k+"-screen"),btn=$("n-"+k);
+    if(el)el.hidden=k!==n;
+    if(btn)btn.classList.toggle("on",k===n);
+  });
+  closeAiSheet();
+}
+
+function manual(){
+  const d=$("md").value,a=$("ms").value,b=$("me").value;
+  if(!d||!a||!b)return null;
+  const [y,mo,da]=d.split("-").map(Number);
+  const st=new Date(y,mo-1,da,+a.slice(0,2),+a.slice(3,5),0,0).getTime();
+  let en=new Date(y,mo-1,da,+b.slice(0,2),+b.slice(3,5),0,0).getTime(),next=false;
+  if(en<=st){en+=864e5;next=true}
+  return {id:Date.now(),start:st,end:en,next};
+}
+
+function preview(){
+  const r=manual();
+  if(!r){$("pv").textContent="Введите число, начало и конец";$("add").disabled=true;return}
+  const keep=log;log=log.concat([r]);const c=calc()[r.id];log=keep;
+  $("pv").innerHTML="Длительность: <b>"+dur(c.d)+"</b>"+(r.next?" (конец на следующий день)":"")+"<br>100%: "+z(c.a)+" · 125%: "+z(c.b)+" · 150%: "+z(c.c)+"";
+  $("add").disabled=false;
+}
+
+/* ==================== COLLAPSIBLE AI SHEET CONTROL ==================== */
+function openAiSheet(){
+  $("ai-sheet").classList.add("open");
+  $("ai-overlay").classList.add("open");
+  $("n-ai").classList.add("on");
+  buzz();
+}
+function closeAiSheet(){
+  $("ai-sheet").classList.remove("open");
+  $("ai-overlay").classList.remove("open");
+  $("n-ai").classList.remove("on");
+  buzz();
+}
+function toggleAiSheet(){
+  if($("ai-sheet").classList.contains("open")){
+    closeAiSheet();
+  }else{
+    openAiSheet();
+  }
+}
+
+$("n-ai").onclick=toggleAiSheet;
+$("ai-collapse-btn").onclick=closeAiSheet;
+$("ai-overlay").onclick=closeAiSheet;
+$("ai-quick-link").onclick=openAiSheet;
+$("ai-hist-btn").onclick=()=>{
+  openAiSheet();
+  handleUserAiQuery("📊 Аналитика часов и отчет");
+};
+
+// Swipe down handle logic
+let touchStartY=0,touchDiff=0;
+const handleEl=$("ai-sheet-handle");
+const sheetEl=$("ai-sheet");
+if(handleEl&&sheetEl){
+  handleEl.addEventListener("touchstart",e=>{
+    touchStartY=e.touches[0].clientY;touchDiff=0;
+  },{passive:true});
+  handleEl.addEventListener("touchmove",e=>{
+    const y=e.touches[0].clientY;
+    touchDiff=y-touchStartY;
+    if(touchDiff>0){sheetEl.style.transform=`translateY(${touchDiff}px)`}
+  },{passive:true});
+  handleEl.addEventListener("touchend",()=>{
+    if(touchDiff>70){closeAiSheet()}
+    sheetEl.style.transform="";
+    touchStartY=0;touchDiff=0;
+  });
+}
+
+/* ==================== AI NLP ENGINE ==================== */
+function parseNaturalTime(str){
+  if(!str)return null;
+  let s=str.trim().toLowerCase();
+  let targetDate=new Date();
+  if(s.includes("позавчера")){
+    targetDate.setDate(targetDate.getDate()-2);
+    s=s.replace("позавчера"," ");
+  }else if(s.includes("вчера")){
+    targetDate.setDate(targetDate.getDate()-1);
+    s=s.replace("вчера"," ");
+  }else if(s.includes("сегодня")){
+    s=s.replace("сегодня"," ");
+  }else{
+    const dateMatch2=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    const dateMatch1=s.match(/(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/);
+    if(dateMatch2){
+      targetDate=new Date(+dateMatch2[1],+dateMatch2[2]-1,+dateMatch2[3]);
+      s=s.replace(dateMatch2[0]," ");
+    }else if(dateMatch1){
+      const yr=dateMatch1[3]?(+dateMatch1[3]<100?2000+Number(dateMatch1[3]):+dateMatch1[3]):targetDate.getFullYear();
+      targetDate=new Date(yr,+dateMatch1[2]-1,+dateMatch1[1]);
+      s=s.replace(dateMatch1[0]," ");
+    }
+  }
+  const dateStr=targetDate.getFullYear()+"-"+p2(targetDate.getMonth()+1)+"-"+p2(targetDate.getDate());
+  let startH=null,startM=0,endH=null,endM=0;
+  const rangeMatch=s.match(/(?:с\s*)?(\b\d{1,2})(?::(\d{2}))?\s*(?:до|по|-|–)\s*(\b\d{1,2})(?::(\d{2}))?/);
+  if(rangeMatch){
+    startH=+rangeMatch[1];startM=rangeMatch[2]?+rangeMatch[2]:0;
+    endH=+rangeMatch[3];endM=rangeMatch[4]?+rangeMatch[4]:0;
+  }else{
+    const durMatch=s.match(/(\d+(?:[.,]\d+)?)\s*(?:ч|час|часов)\s*(?:с|от)?\s*(\b\d{1,2})(?::(\d{2}))?/);
+    if(durMatch){
+      const hours=parseFloat(durMatch[1].replace(",","."));
+      startH=+durMatch[2];startM=durMatch[3]?+durMatch[3]:0;
+      const endTotalM=startH*60+startM+Math.round(hours*60);
+      endH=Math.floor(endTotalM/60)%24;endM=endTotalM%60;
+    }
+  }
+  if(startH!==null&&endH!==null&&startH>=0&&startH<24&&endH>=0&&endH<24){
+    return {date:dateStr,start:p2(startH)+":"+p2(startM),end:p2(endH)+":"+p2(endM)};
+  }
+  return null;
+}
+
+$("nlp-btn").onclick=()=>{
+  buzz();
+  const val=$("nlp-text").value;
+  const res=parseNaturalTime(val);
+  if(res){
+    $("md").value=res.date;
+    $("ms").value=res.start;
+    $("me").value=res.end;
+    $("nlp-hint").innerHTML="<span style='color:var(--go2)'>✓ Распознано: "+res.date+", "+res.start+" — "+res.end+"</span>";
+    preview();
+  }else{
+    $("nlp-hint").innerHTML="<span style='color:var(--stop)'>Не удалось распознать. Пример: «вчера с 9:00 до 18:30»</span>";
+  }
+};
+$("nlp-text").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();$("nlp-btn").click()}};
+
+/* ==================== AI ASSISTANT CORE ==================== */
+let aiConfig={
+  provider:"local",
+  apiKey:"",
+  model:"gemini-1.5-flash",
+  endpoint:""
+};
+
+function loadAiConfig(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(AI_CFG_KEY)||"{}");
+    aiConfig=Object.assign(aiConfig,saved);
+  }catch(e){}
+  updateAiStatusUI();
+}
+
+function saveAiConfig(){
+  try{localStorage.setItem(AI_CFG_KEY,JSON.stringify(aiConfig))}catch(e){}
+  updateAiStatusUI();
+}
+
+function updateAiStatusUI(){
+  const b=$("ai-status-badge"),t=$("ai-status-text");
+  if(!b||!t)return;
+  if(aiConfig.provider==="local"||!aiConfig.apiKey){
+    b.className="ai-status-badge";
+    t.textContent="Офлайн";
+  }else if(aiConfig.provider==="gemini"){
+    b.className="ai-status-badge online";
+    t.textContent="Gemini";
+  }else if(aiConfig.provider==="openai"){
+    b.className="ai-status-badge online";
+    t.textContent="OpenAI";
+  }else if(aiConfig.provider==="deepseek"){
+    b.className="ai-status-badge online";
+    t.textContent="DeepSeek";
+  }else{
+    b.className="ai-status-badge online";
+    t.textContent="Custom AI";
+  }
+}
+
+function getWorkContext(){
+  const cc=calc();
+  const todayStr=dt(Date.now());
+  const todayRecs=log.filter(r=>dt(r.start)===todayStr);
+  const todayMs=todayRecs.reduce((acc,r)=>acc+(r.end-r.start),0)+(startTs?(Date.now()-startTs):0);
+  const totalMs=log.reduce((acc,r)=>acc+(r.end-r.start),0);
+  let t100=0,t125=0,t150=0,tW=0;
+  for(const id in cc){
+    t100+=cc[id].a;t125+=cc[id].b;t150+=cc[id].c;tW+=cc[id].w;
+  }
+  const dayMap={};
+  log.forEach(r=>{
+    const k=dt(r.start);
+    if(!dayMap[k])dayMap[k]={ms:0,a:0,b:0,c:0};
+    dayMap[k].ms+=(r.end-r.start);
+    const c=cc[r.id];
+    if(c){dayMap[k].a+=c.a;dayMap[k].b+=c.b;dayMap[k].c+=c.c}
+  });
+  const days=Object.keys(dayMap);
+  const avgDayMs=days.length?Math.round(totalMs/days.length):0;
+
+  return {
+    todayStr,
+    timerRunning:startTs!==null,
+    currentElapsed:startTs?dur(Date.now()-startTs):"00:00:00",
+    todayTotal:dur(todayMs),
+    todayMs,
+    totalRecords:log.length,
+    totalDays:days.length,
+    totalDuration:dur(totalMs),
+    totalHours:durHours(totalMs),
+    total100:dur(t100),
+    total125:dur(t125),
+    total150:dur(t150),
+    effectiveTotal:dur(tW),
+    avgDay:dur(avgDayMs),
+    dayMap,
+    days
+  };
+}
+
+/* Offline Smart AI engine */
+function runOfflineAI(query){
+  const q=query.toLowerCase();
+  const ctx=getWorkContext();
+
+  if(q.includes("выгоран")||q.includes("устал")||q.includes("риск")){
+    let over85=0,over105=0;
+    ctx.days.forEach(d=>{
+      const m=ctx.dayMap[d].ms;
+      if(m>T1)over85++;
+      if(m>T2)over105++;
+    });
+    let riskLevel="🟢 Низкий",advice="Ваш график сбалансирован. Норма 8:30 соблюдается.";
+    if(over105>=2||over85>=5){
+      riskLevel="🔴 Высокий / Критический";
+      advice="Регулярная максимальная переработка (>10.5 ч). Высокий риск выгорания! Рекомендуется взять 1-2 дня отдыха.";
+    }else if(over85>=2||over105>=1){
+      riskLevel="🟡 Умеренный";
+      advice="Есть сверхурочные смены. Делайте обязательные паузы 10-15 минут каждые 2 часа.";
+    }
+    return `### ⚠️ Оценка риска выгорания\n\n`+
+      `• **Уровень риска:** ${riskLevel}\n`+
+      `• **Отработано дней:** ${ctx.totalDays}\n`+
+      `• **Дней с переработкой (>8.5ч):** ${over85}\n`+
+      `• **Критических смен (>10.5ч):** ${over105}\n\n`+
+      `**💡 Совет:** ${advice}`;
+  }
+
+  if(q.includes("прогноз")||q.includes("сегодня")||q.includes("когда законч")){
+    if(ctx.timerRunning){
+      const curToday=ctx.todayMs;
+      if(curToday<T1){
+        const left=T1-curToday;
+        const finishTs=Date.now()+left;
+        const d=new Date(finishTs);
+        return `### 🔮 Прогноз на сегодня\n\n`+
+          `• **Уже отработано:** ${dur(curToday)}\n`+
+          `• **До нормы 8:30 осталось:** ${dur(left)}\n`+
+          `• **Расчетное завершение нормы:** **${p2(d.getHours())}:${p2(d.getMinutes())}**\n\n`+
+          `Далее начнется начисление переработок по ставке 125%!`;
+      }else if(curToday<T2){
+        const over=curToday-T1;
+        const leftTo150=T2-curToday;
+        const finishTs150=Date.now()+leftTo150;
+        const d150=new Date(finishTs150);
+        return `### ⚡ Прогноз: Переработка 125%\n\n`+
+          `• **Норма 8:30 уже выполнена!**\n`+
+          `• **Переработка 125%:** ${dur(over)}\n`+
+          `• **Порог ставки 150% (>10.5ч):** наступит в **${p2(d150.getHours())}:${p2(d150.getMinutes())}**`;
+      }else{
+        return `### 🛑 Максимальная переработка 150%\n\n`+
+          `• **Отработано сегодня:** ${dur(curToday)}\n`+
+          `• Время превысило 10 часов 30 минут. Ставка 150%. Пора отдыхать!`;
+      }
+    }else{
+      return `### ⏱ Прогноз на сегодня\n\n`+
+        `• Таймер сейчас **не запущен**.\n`+
+        `• За сегодня зафиксировано: **${ctx.todayTotal}**\n`+
+        (ctx.todayMs<T1?`• До закрытия нормы 8:30 осталось: **${dur(T1-ctx.todayMs)}**.`:`• Дневная норма 8:30 за сегодня уже **выполнена**! 🎉`);
+    }
+  }
+
+  if(q.includes("отчет")||q.includes("шеф")||q.includes("руковод")||q.includes("клиент")){
+    return `### 📋 Отчет о рабочем времени\n\n`+
+      `• **Всего смен:** ${ctx.totalRecords} (за ${ctx.totalDays} дней)\n`+
+      `• **Фактическое время:** ${ctx.totalDuration} (${ctx.totalHours})\n`+
+      `• **Базовые часы (100%):** ${ctx.total100}\n`+
+      `• **Сверхурочные 125%:** ${ctx.total125}\n`+
+      `• **Сверхурочные 150%:** ${ctx.total150}\n`+
+      `• **Расчетное время (с надбавками):** **${ctx.effectiveTotal}**`;
+  }
+
+  if(q.includes("ставк")||q.includes("расчет")||q.includes("заработ")||q.includes("зарплат")||q.includes("руб")||q.includes("оплат")){
+    const match=q.match(/(\d+[\d\s]*)/);
+    let rate=match?parseInt(match[1].replace(/\s+/g,""),10):0;
+    if(rate<10||rate>100000)rate=500;
+
+    const cc=calc();
+    let ms100=0,ms125=0,ms150=0;
+    for(const id in cc){ms100+=cc[id].a;ms125+=cc[id].b;ms150+=cc[id].c}
+    const h100=ms100/3600000,h125=ms125/3600000,h150=ms150/3600000;
+    const pay100=Math.round(h100*rate);
+    const pay125=Math.round(h125*rate*1.25);
+    const pay150=Math.round(h150*rate*1.5);
+    const totalPay=pay100+pay125+pay150;
+
+    return `### 💰 Расчет по ставке ${rate} ₽/час\n\n`+
+      `• **Базовые часы (100%):** ${h100.toFixed(2)} ч × ${rate} ₽ = **${pay100.toLocaleString("ru-RU")} ₽**\n`+
+      `• **Переработки 125% (+25%):** ${h125.toFixed(2)} ч × ${Math.round(rate*1.25)} ₽ = **${pay125.toLocaleString("ru-RU")} ₽**\n`+
+      `• **Переработки 150% (+50%):** ${h150.toFixed(2)} ч × ${Math.round(rate*1.5)} ₽ = **${pay125.toLocaleString("ru-RU")} ₽**\n\n`+
+      `🎉 **ИТОГО:** **${totalPay.toLocaleString("ru-RU")} ₽**`;
+  }
+
+  if(q.includes("совет")||q.includes("продуктив")||q.includes("помодоро")){
+    return `### 💡 Советы по продуктивности\n\n`+
+      `1. **Интервалы 50/10:** 50 минут концентрации, 10 минут отдыха — снижает усталость.\n`+
+      `2. **Управление энергией:** Сложные задачи делайте в первые 4-5 часов смены.\n`+
+      `3. **Перерывы:** Не забывайте пить воду и делать легкую разминку.`;
+  }
+
+  // Общая аналитика
+  return `### 📊 Анализ времени\n\n`+
+    `• **Смен:** ${ctx.totalRecords} (за ${ctx.totalDays} дней)\n`+
+    `• **Фактическое время:** ${ctx.totalDuration}\n`+
+    `• **Средняя длина смены:** ${ctx.avgDay}\n`+
+    `• **Норма (100%):** ${ctx.total100}\n`+
+    `• **Сверхурочные 125%:** ${ctx.total125}\n`+
+    `• **Сверхурочные 150%:** ${ctx.total150}\n`+
+    `• **Эффективное время:** **${ctx.effectiveTotal}**`;
+}
+
+function formatAiText(str){
+  return str
+    .replace(/^### (.*$)/gim,'<b style="font-size:14.5px;color:var(--ai);display:block;margin:1px 0 5px">$1</b>')
+    .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+    .replace(/^\s*• (.*$)/gim,'<div style="margin:2px 0;padding-left:3px">• $1</div>')
+    .replace(/\n\n/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+}
+
+function addMessage(author,text,isBot=true){
+  const chat=$("ai-chat");
+  const msg=document.createElement("div");
+  msg.className="ai-msg "+(isBot?"bot":"user");
+  if(isBot){
+    msg.innerHTML=`<div class="ai-author">🤖 ${author}</div><div class="ai-body">${formatAiText(text)}</div>`;
+    const copy=document.createElement("button");
+    copy.className="ai-copy-btn";
+    copy.textContent="Копировать";
+    copy.onclick=()=>{
+      try{
+        navigator.clipboard.writeText(text);
+        copy.textContent="✓ Скопировано";
+        setTimeout(()=>copy.textContent="Копировать",2000);
+      }catch(e){}
+    };
+    msg.appendChild(copy);
+  }else{
+    msg.textContent=text;
+  }
+  chat.appendChild(msg);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function showTyping(){
+  const chat=$("ai-chat");
+  const el=document.createElement("div");
+  el.className="ai-typing";el.id="ai-typing-indicator";
+  el.innerHTML="<span></span><span></span><span></span>";
+  chat.appendChild(el);chat.scrollTop=chat.scrollHeight;
+}
+
+function removeTyping(){
+  const el=$("ai-typing-indicator");
+  if(el)el.remove();
+}
+
+async function callCloudLLM(userPrompt){
+  const ctx=getWorkContext();
+  const systemPrompt=`Ты персональный ассистент по учёту рабочего времени.
+Текущее время: ${new Date().toLocaleString("ru-RU")}.
+Норма дня: 8:30.
+Правила сверхурочных:
+- До 8:30: коэффициент 100%
+- От 8:30 до 10:30: коэффициент 125%
+- Свыше 10:30: коэффициент 150%
+
+Данные:
+- Таймер активен сейчас: ${ctx.timerRunning ? ("ДА, длительность: "+ctx.currentElapsed) : "НЕТ"}
+- Всего за сегодня: ${ctx.todayTotal}
+- Отработано дней: ${ctx.totalDays}, смен: ${ctx.totalRecords}
+- Суммарно: ${ctx.totalDuration}
+- Часы 100%: ${ctx.total100}, 125%: ${ctx.total125}, 150%: ${ctx.total150}
+- Эффективные оплачиваемые часы: ${ctx.effectiveTotal}
+- Средняя смена: ${ctx.avgDay}
+
+Отвечай кратко, емко, вежливо, на русском языке. Используй жирный шрифт (**текст**) и списки (•).`;
+
+  if(aiConfig.provider==="gemini"){
+    const model=aiConfig.model||"gemini-1.5-flash";
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiConfig.apiKey}`;
+    const res=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        contents:[{
+          role:"user",
+          parts:[{text:systemPrompt+"\n\nЗапрос: "+userPrompt}]
+        }],
+        generationConfig:{temperature:0.7,maxOutputTokens:900}
+      })
+    });
+    if(!res.ok){
+      const err=await res.json().catch(()=>({}));
+      throw new Error(err.error?.message||("Ошибка Gemini API: "+res.status));
+    }
+    const data=await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text||"Нет ответа.";
+  }
+
+  // OpenAI / DeepSeek / Custom
+  const ep=aiConfig.endpoint||(aiConfig.provider==="deepseek"?"https://api.deepseek.com/chat/completions":"https://api.openai.com/v1/chat/completions");
+  const mod=aiConfig.model||(aiConfig.provider==="deepseek"?"deepseek-chat":"gpt-4o-mini");
+  const res=await fetch(ep,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer "+aiConfig.apiKey
+    },
+    body:JSON.stringify({
+      model:mod,
+      messages:[
+        {role:"system",content:systemPrompt},
+        {role:"user",content:userPrompt}
+      ],
+      temperature:0.7
+    })
+  });
+  if(!res.ok){
+    const err=await res.json().catch(()=>({}));
+    throw new Error(err.error?.message||("Ошибка API: "+res.status));
+  }
+  const data=await res.json();
+  return data.choices?.[0]?.message?.content||"Нет ответа.";
+}
+
+async function handleUserAiQuery(text){
+  if(!text||!text.trim())return;
+  const q=text.trim();
+  addMessage("Вы",q,false);
+  $("ai-input").value="";
+  showTyping();
+  buzz();
+
+  try{
+    if(aiConfig.provider!=="local"&&aiConfig.apiKey){
+      const answer=await callCloudLLM(q);
+      removeTyping();
+      addMessage("ИИ ("+aiConfig.provider+")",answer,true);
+    }else{
+      setTimeout(()=>{
+        removeTyping();
+        const reply=runOfflineAI(q);
+        addMessage("Офлайн ИИ",reply,true);
+      },300);
+    }
+  }catch(err){
+    removeTyping();
+    addMessage("ИИ",
+      "⚠️ Ошибка API: **"+err.message+"**.\n\n"+runOfflineAI(q),
+      true
+    );
+  }
+}
+
+$("ai-send").onclick=()=>handleUserAiQuery($("ai-input").value);
+$("ai-input").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();$("ai-send").click()}};
+document.querySelectorAll(".ai-chip").forEach(btn=>{
+  btn.onclick=()=>{
+    const q=btn.getAttribute("data-q");
+    if(q)handleUserAiQuery(q);
+  };
+});
+
+/* Modal AI settings logic */
+$("ai-cfg-open").onclick=()=>{
+  $("cfg-provider").value=aiConfig.provider;
+  $("cfg-key").value=aiConfig.apiKey||"";
+  $("cfg-model").value=aiConfig.model||"";
+  $("cfg-url").value=aiConfig.endpoint||"";
+  toggleCfgFields();
+  $("ai-modal").hidden=false;
+};
+$("ai-cfg-close").onclick=$("ai-cfg-cancel").onclick=()=>{$("ai-modal").hidden=true};
+$("cfg-provider").onchange=toggleCfgFields;
+
+function toggleCfgFields(){
+  const p=$("cfg-provider").value;
+  const isLocal=p==="local";
+  $("cfg-key-wrap").style.display=isLocal?"none":"grid";
+  $("cfg-model-wrap").style.display=isLocal?"none":"grid";
+  $("cfg-url-wrap").style.display=(p==="custom"||p==="deepseek")?"grid":"none";
+  if(!isLocal&&!$("cfg-model").value){
+    if(p==="gemini")$("cfg-model").value="gemini-1.5-flash";
+    if(p==="openai")$("cfg-model").value="gpt-4o-mini";
+    if(p==="deepseek")$("cfg-model").value="deepseek-chat";
+  }
+}
+
+$("ai-cfg-save").onclick=()=>{
+  aiConfig.provider=$("cfg-provider").value;
+  aiConfig.apiKey=$("cfg-key").value.trim();
+  aiConfig.model=$("cfg-model").value.trim();
+  aiConfig.endpoint=$("cfg-url").value.trim();
+  saveAiConfig();
+  $("ai-modal").hidden=true;
+  buzz();
+};
+
+/* ==================== IMPORT & EXPORT ACTIONS ==================== */
+function openExportModal(){
+  if(!log.length){alert("В истории пока нет записей для экспорта.");return}
+  $("export-modal").hidden=false;
+  buzz();
+}
+function closeExportModal(){$("export-modal").hidden=true}
+
+$("btn-export").onclick=openExportModal;
+$("export-close").onclick=$("export-cancel").onclick=closeExportModal;
+
+async function exportXlsx(){
+  if(!log.length){alert("В истории пока нет записей для экспорта.");return}
+  if(typeof XLSX==="undefined"){alert("Не удалось загрузить модуль Excel");return}
+  const cc=calc(),tot={d:0,a:0,b:0,c:0,w:0};
+  const rows=[["№","Число","Начало","Конец","Длительность","100%","125%","150%"]];
+  log.forEach((r,i)=>{
+    const c=cc[r.id];for(const k in tot)tot[k]+=c[k];
+    rows.push([i+1,dt(r.start),tm(r.start),tm(r.end),dur(c.d),dur(c.a),dur(c.b),dur(c.c)]);
+  });
+  rows.push([],["","","","Итого",dur(tot.d),dur(tot.a),dur(tot.b),dur(tot.c)]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:5},{wch:12},{wch:10},{wch:10},{wch:14},{wch:10},{wch:10},{wch:10}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Время");
+  const name="uchet-vremeni.xlsx";
+  const P=window.Capacitor&&Capacitor.Plugins;
+  if(P&&P.Filesystem&&P.Share){
+    const b64=XLSX.write(wb,{bookType:"xlsx",type:"base64"});
+    await P.Filesystem.writeFile({path:name,data:b64,directory:"CACHE"});
+    const u=await P.Filesystem.getUri({path:name,directory:"CACHE"});
+    await P.Share.share({title:"Учёт времени",url:u.uri});
+  }else{
+    XLSX.writeFile(wb,name);
+  }
+  closeExportModal();
+}
+
+async function exportJson(){
+  if(!log.length){alert("В истории пока нет записей для экспорта.");return}
+  const name="uchet-vremeni-backup.json";
+  const jsonStr=JSON.stringify({version:1,exportedAt:Date.now(),log},null,2);
+  const P=window.Capacitor&&Capacitor.Plugins;
+  if(P&&P.Filesystem&&P.Share){
+    const bytes=new TextEncoder().encode(jsonStr);
+    let bin="";for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+    const b64=btoa(bin);
+    await P.Filesystem.writeFile({path:name,data:b64,directory:"CACHE"});
+    const u=await P.Filesystem.getUri({path:name,directory:"CACHE"});
+    await P.Share.share({title:"Резервная копия",url:u.uri});
+  }else{
+    const blob=new Blob([jsonStr],{type:"application/json"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=name;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+  closeExportModal();
+}
+
+$("export-xlsx-btn").onclick=exportXlsx;
+$("export-json-btn").onclick=exportJson;
+
+$("btn-import").onclick=()=>{
+  $("file-import").value="";
+  $("file-import").click();
+  buzz();
+};
+
+$("file-import").onchange=e=>{
+  const file=e.target.files&&e.target.files[0];
+  if(file)handleFileImport(file);
+};
+
+function parseDateCell(val){
+  if(val===undefined||val===null||val==="")return null;
+  if(val instanceof Date)return {y:val.getFullYear(),m:val.getMonth(),d:val.getDate()};
+  if(typeof val==="number"&&typeof XLSX!=="undefined"&&XLSX.SSF){
+    const p=XLSX.SSF.parse_date_code(val);
+    if(p&&p.y>=2000)return {y:p.y,m:p.m-1,d:p.d};
+  }
+  const s=String(val).trim();
+  const m1=s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if(m1){
+    const yr=+m1[3]<100?2000+Number(m1[3]):+m1[3];
+    return {y:yr,m:+m1[2]-1,d:+m1[1]};
+  }
+  const m2=s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if(m2)return {y:+m2[1],m:+m2[2]-1,d:+m2[3]};
+  return null;
+}
+
+function parseTimeCell(val){
+  if(val===undefined||val===null||val==="")return null;
+  if(val instanceof Date)return {h:val.getHours(),m:val.getMinutes(),s:val.getSeconds()};
+  if(typeof val==="number"&&typeof XLSX!=="undefined"&&XLSX.SSF){
+    const p=XLSX.SSF.parse_date_code(val);
+    if(p)return {h:p.H,m:p.M,s:p.S};
+  }
+  const s=String(val).trim();
+  const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m)return {h:+m[1],m:+m[2],s:m[3]?+m[3]:0};
+  return null;
+}
+
+function parseExcelRows(rawRows){
+  if(!rawRows||!rawRows.length)return [];
+  let dateCol=-1,startCol=-1,endCol=-1,startRow=0;
+  for(let r=0;r<Math.min(6,rawRows.length);r++){
+    const row=rawRows[r]||[];
+    for(let c=0;c<row.length;c++){
+      const cell=String(row[c]||"").toLowerCase().trim();
+      if(cell.includes("числ")||cell.includes("дат")||cell==="date")dateCol=c;
+      if(cell.includes("нач")||cell.includes("старт")||cell==="start")startCol=c;
+      if(cell.includes("кон")||cell.includes("стоп")||cell==="end")endCol=c;
+    }
+    if(dateCol!==-1&&startCol!==-1&&endCol!==-1){
+      startRow=r+1;
+      break;
+    }
+  }
+  if(dateCol===-1)dateCol=1;
+  if(startCol===-1)startCol=2;
+  if(endCol===-1)endCol=3;
+
+  const result=[];
+  for(let r=startRow;r<rawRows.length;r++){
+    const row=rawRows[r]||[];
+    const rowText=row.join(" ").toLowerCase();
+    if(rowText.includes("итого")||rowText.includes("всего")||rowText.includes("total"))continue;
+    const dVal=row[dateCol],sVal=row[startCol],eVal=row[endCol];
+    const dObj=parseDateCell(dVal);
+    const sObj=parseTimeCell(sVal);
+    const eObj=parseTimeCell(eVal);
+    if(!dObj||!sObj||!eObj)continue;
+
+    const startTs=new Date(dObj.y,dObj.m,dObj.d,sObj.h,sObj.m,sObj.s).getTime();
+    let endTs=new Date(dObj.y,dObj.m,dObj.d,eObj.h,eObj.m,eObj.s).getTime();
+    if(endTs<=startTs)endTs+=86400000;
+    result.push({id:startTs,start:startTs,end:endTs});
+  }
+  return result;
+}
+
+function handleFileImport(file){
+  if(!file)return;
+  const isJson=file.name.toLowerCase().endsWith(".json");
+  const reader=new FileReader();
+
+  if(isJson){
+    reader.onload=e=>{
+      try{
+        const parsed=JSON.parse(e.target.result);
+        const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed.log)?parsed.log:[]);
+        const valid=list.filter(x=>x&&x.start&&x.end&&x.end>x.start).map(x=>({
+          id:x.id||x.start,
+          start:+x.start,
+          end:+x.end
+        }));
+        showImportModal(file.name,valid);
+      }catch(err){
+        alert("Ошибка чтения JSON: "+err.message);
+      }
+    };
+    reader.readAsText(file);
+  }else{
+    reader.onload=e=>{
+      try{
+        if(typeof XLSX==="undefined"){alert("Модуль Excel не загружен");return}
+        const data=new Uint8Array(e.target.result);
+        const wb=XLSX.read(data,{type:"array"});
+        const sheet=wb.Sheets[wb.SheetNames[0]];
+        const rawRows=XLSX.utils.sheet_to_json(sheet,{header:1});
+        const valid=parseExcelRows(rawRows);
+        showImportModal(file.name,valid);
+      }catch(err){
+        alert("Ошибка чтения Excel файла: "+err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function showImportModal(fileName,records){
+  if(!records.length){
+    alert("В файле «"+fileName+"» не найдено подходящих записей.\nУбедитесь, что в таблице заполнены столбцы «Число», «Начало» и «Конец».");
+    return;
+  }
+  pendingImport=records.sort((a,b)=>a.start-b.start);
+  const totalMs=pendingImport.reduce((acc,r)=>acc+(r.end-r.start),0);
+  const firstD=dt(pendingImport[0].start),lastD=dt(pendingImport[pendingImport.length-1].start);
+
+  $("import-summary").innerHTML=
+    `<b>Файл:</b> ${fileName}<br>`+
+    `<b>Найдено смен:</b> ${pendingImport.length}<br>`+
+    `<b>Период:</b> ${firstD} — ${lastD}<br>`+
+    `<b>Суммарно:</b> ${dur(totalMs)}<br>`+
+    `<span style="color:var(--mute)">Текущих записей в истории: ${log.length}</span>`;
+
+  $("import-modal").hidden=false;
+  buzz();
+}
+
+$("import-close").onclick=$("import-cancel").onclick=()=>{
+  $("import-modal").hidden=true;
+  pendingImport=[];
+};
+
+$("import-apply").onclick=()=>{
+  if(!pendingImport||!pendingImport.length)return;
+  const mode=document.querySelector('input[name="import-mode"]:checked')?.value||"merge";
+  let count=0;
+  if(mode==="replace"){
+    log=pendingImport.slice();
+    count=log.length;
+  }else{
+    const existing=new Set(log.map(r=>r.start));
+    const toAdd=pendingImport.filter(r=>!existing.has(r.start));
+    log=log.concat(toAdd).sort((a,b)=>a.start-b.start);
+    count=toAdd.length;
+  }
+  save();
+  render();
+  $("import-modal").hidden=true;
+  buzz();
+  alert(`Успешно импортировано смен: ${count} (всего в истории: ${log.length})`);
+  pendingImport=[];
+};
+
+/* ==================== EXISTING ACTIONS ==================== */
+$("toggle").onclick=()=>{
+  buzz();
+  if(startTs===null){
+    const v=$("st").value;let t=Date.now();
+    if(v){const d=new Date();d.setHours(+v.slice(0,2),+v.slice(3,5),0,0);
+      if(d.getTime()>t){alert("Время начала не может быть позже текущего");return}
+      t=d.getTime()}
+    startTs=t;$("st").value=""}
+  else{const end=Date.now();log.push({id:end,start:startTs,end});startTs=null}
+  save();render();loop();
+};
+
+$("st").onchange=()=>{
+  const v=$("st").value;
+  if(startTs===null){render();return}
+  if(!v){render();return}
+  const d=new Date(startTs);d.setHours(+v.slice(0,2),+v.slice(3,5),0,0);
+  if(d.getTime()>Date.now()){alert("Время начала не может быть позже текущего");render();return}
+  startTs=d.getTime();save();render();loop();
+};
+
+$("clr").onclick=()=>{$("st").value="";render()};
+$("n-t").onclick=()=>tab("t");
+$("n-h").onclick=()=>tab("h");
+$("n-m").onclick=()=>{if(!$("md").value){const n=new Date();$("md").value=n.getFullYear()+"-"+p2(n.getMonth()+1)+"-"+p2(n.getDate())}tab("m");preview()};
+
+["md","ms","me"].forEach(i=>$(i).oninput=preview);
+$("add").onclick=()=>{
+  const r=manual();if(!r)return;
+  log.push({id:r.id,start:r.start,end:r.end});log.sort((x,y)=>x.start-y.start);
+  $("ms").value="";$("me").value="";save();render();preview();tab("h");buzz();
+};
+$("clear").onclick=()=>{if(confirm("Удалить все записи?")){log=[];save();render()}};
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)render()});
+
+load();loadAiConfig();render();loop();setSync("Хранится на телефоне");
+</script>
+</body>
+</html>
