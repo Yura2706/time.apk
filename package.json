@@ -17,5 +17,13 @@
     "@capacitor/filesystem": "^8.1.4",
     "@capacitor/share": "^8.0.3",
     "xlsx": "^0.18.5"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yura2706/time.apk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yura2706/time.apk/issues"
+  },
+  "homepage": "https://github.com/Yura2706/time.apk#readme"
 }
