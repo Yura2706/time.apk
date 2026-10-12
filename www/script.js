@@ -68,7 +68,14 @@ function calc() {
     const out = {}, acc = {};
     const T1 = normMs(), T2 = norm125Ms();
     log.slice().sort((a, b) => a.start - b.start).forEach(r => {
-        const k = dayKey(r.start), d = r.end - r.start;
+        const k = dayKey(r.start);
+        let d = r.end - r.start;
+
+        // Спец. типы: Выходной и Больничный считаются как 0 мс
+        if (r.type === "off" || r.type === "sick") {
+            d = 0;
+        }
+
         const before = acc[k] || 0, after = before + d;
         const a = Math.max(0, Math.min(after, T1) - Math.min(before, T1));
         const b = Math.max(0, Math.min(after, T2) - Math.max(before, T1));
@@ -195,7 +202,10 @@ function render() {
 
     const today = dt(Date.now());
     const T1 = normMs();
-    const tsum = log.filter(r => dayKey(r.start) === today).reduce((a, r) => a + r.end - r.start, 0);
+    const tsum = log.filter(r => dayKey(r.start) === today).reduce((a, r) => {
+        if (r.type === "off" || r.type === "sick") return a;
+        return a + (r.end - r.start);
+    }, 0);
     const cur = tsum + (run ? Date.now() - startTs : 0);
     tsumLog = tsum;
     ring(cur);
@@ -205,7 +215,10 @@ function render() {
 
     const mStart = startOfMonth(new Date()).getTime();
     const mEnd = endOfDay(new Date()).getTime();
-    const mMs = log.filter(r => r.start >= mStart && r.start <= mEnd).reduce((a, r) => a + r.end - r.start, 0);
+    const mMs = log.filter(r => r.start >= mStart && r.start <= mEnd).reduce((a, r) => {
+        if (r.type === "off" || r.type === "sick") return a;
+        return a + (r.end - r.start);
+    }, 0);
     const mNormMs = settings.monthlyNorm * HOUR;
     const pct = Math.min(100, Math.round(mMs / mNormMs * 100));
     $("month-sum").innerHTML =
@@ -214,7 +227,10 @@ function render() {
         `<div class="mbar"><i style="width:${pct}%"></i></div>`;
 
     const list = filteredLog();
-    const totalMs = list.reduce((a, r) => a + r.end - r.start, 0);
+    const totalMs = list.reduce((a, r) => {
+        if (r.type === "off" || r.type === "sick") return a;
+        return a + (r.end - r.start);
+    }, 0);
     $("cnt").textContent = list.length ? "Записей: " + list.length + " / " + log.length : "";
     $("total").textContent = list.length ? "Всего: " + dur(totalMs) : "";
     $("clear").hidden = !log.length;
@@ -235,7 +251,6 @@ function render() {
         let startText = tm(r.start);
         let endText = tm(r.end);
 
-        // Форматирование названий для специальных типов записей
         if (r.type === "off") {
             startText = "🌴 Выходной";
             endText = "—";
@@ -302,6 +317,7 @@ function drawHeatmap() {
 
     const perDay = {};
     log.forEach(r => {
+        if (r.type === "off" || r.type === "sick") return;
         const k = dayKey(r.start);
         perDay[k] = (perDay[k] || 0) + (r.end - r.start);
     });
@@ -412,7 +428,6 @@ function manual() {
 
     const [y, mo, da] = d.split("-").map(Number);
 
-    // Выходной / Больничный / Праздник
     if (type !== "work") {
         const st = new Date(y, mo - 1, da, 8, 0, 0, 0).getTime();
         let duration = 0;
@@ -427,7 +442,6 @@ function manual() {
         };
     }
 
-    // Обычная смена
     const a = $("ms").value, b = $("me").value;
     if (!a || !b) return null;
 
@@ -557,6 +571,7 @@ async function exportXlsx() {
     aoa.push([]);
     aoa.push(["№", "Число", "Начало", "Конец", "За день", "100%", "125%", "150%"]);
     const headerRowIdx = aoa.length - 1;
+
     list.forEach((r, i) => {
         const c = cc[r.id] || { d: r.end - r.start, a: 0, b: 0, c: 0 };
         tot.d += c.d; tot.a += c.a; tot.b += c.b; tot.c += c.c;
@@ -572,19 +587,20 @@ async function exportXlsx() {
             dt(r.start),
             stVal,
             enVal,
-            +(c.d / HOUR).toFixed(2),
-            +(c.a / HOUR).toFixed(2),
-            +(c.b / HOUR).toFixed(2),
-            +(c.c / HOUR).toFixed(2)
+            dur(c.d).slice(0, 5),
+            z(c.a) !== "–" ? z(c.a).slice(0, 5) : "–",
+            z(c.b) !== "–" ? z(c.b).slice(0, 5) : "–",
+            z(c.c) !== "–" ? z(c.c).slice(0, 5) : "–"
         ]);
     });
+
     const totalRowIdx = aoa.length;
     aoa.push([
         "", "Итого", "", "",
-        +(tot.d / HOUR).toFixed(2),
-        +(tot.a / HOUR).toFixed(2),
-        +(tot.b / HOUR).toFixed(2),
-        +(tot.c / HOUR).toFixed(2)
+        dur(tot.d),
+        z(tot.a),
+        z(tot.b),
+        z(tot.c)
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -655,8 +671,10 @@ async function exportCsv() {
 
         lines.push([
             i + 1, dt(r.start), stVal, enVal,
-            (c.d / HOUR).toFixed(2), (c.a / HOUR).toFixed(2),
-            (c.b / HOUR).toFixed(2), (c.c / HOUR).toFixed(2)
+            dur(c.d).slice(0, 5),
+            z(c.a) !== "–" ? z(c.a).slice(0, 5) : "–",
+            z(c.b) !== "–" ? z(c.b).slice(0, 5) : "–",
+            z(c.c) !== "–" ? z(c.c).slice(0, 5) : "–"
         ].map(escapeCsv).join(","));
     });
     const text = lines.join("\n");
